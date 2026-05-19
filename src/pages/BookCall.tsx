@@ -70,67 +70,70 @@ export default function BookCall() {
   const [calLoaded, setCalLoaded] = useState(false)
 
   useEffect(() => {
-    let mounted = true
+    // If the namespace is already live (StrictMode double-mount, back-navigation),
+    // nothing to do — the calendar is already rendered in the DOM.
+    if (window.Cal?.ns?.['dineauto-onboarding']) {
+      setCalLoaded(true)
+      return
+    }
 
-    function initCal() {
-      const Cal = window.Cal
-      if (!Cal) return
+    // ── Official Cal.com shim ────────────────────────────────────────────────
+    // Creates window.Cal as an in-memory queue *before* embed.js loads.
+    // Every Cal() call below is recorded in that queue and replayed the
+    // instant embed.js finishes loading — no race condition, no onload race.
+    if (!window.Cal) {
+      const cal: CalFn = function (...args: unknown[]) {
+        if (!cal.loaded) {
+          cal.ns = {}
+          cal.q = []
+          const s = document.createElement('script')
+          s.id = 'cal-embed-script'
+          s.src = 'https://app.cal.com/embed/embed.js'
+          s.async = true
+          document.head.appendChild(s)
+          cal.loaded = true
+        }
+        if (args[0] === 'init') {
+          const ns: CalFn = function (...a: unknown[]) {
+            ns.q = ns.q ?? []
+            ns.q.push(a)
+          }
+          ns.q = []
+          const namespaceName = args[1] as string
+          cal.ns![namespaceName] = cal.ns![namespaceName] ?? ns
+          cal.q!.push(args)
+          return
+        }
+        cal.q!.push(args)
+      } as CalFn
+      cal.q = []
+      cal.loaded = false
+      window.Cal = cal
+    }
 
-      // Init the namespace
-      Cal('init', 'dineauto-onboarding', { origin: 'https://app.cal.com' })
+    // ── Wire up the embed ────────────────────────────────────────────────────
+    // These calls are queued immediately and executed once embed.js loads.
+    window.Cal!('init', 'dineauto-onboarding', { origin: 'https://app.cal.com' })
 
-      // Cal.ns is populated by Cal('init', ...) above — guard for TS
-      const ns = Cal.ns?.['dineauto-onboarding']
-      if (!ns) return
-
-      // Inline embed — must use the namespace variant, not Cal() directly
-      ns('inline', {
-        elementOrSelector: '#my-cal-inline-dineauto-onboarding',
-        calLink: 'abdellah-ouderhem/dineauto-onboarding',
-        config: {
-          layout: 'month_view',
-          theme: 'dark',
-          useSlotsViewOnSmallScreen: 'true',
-        },
-      })
-
-      // UI config
-      ns('ui', {
-        theme: 'dark',
-        hideEventTypeDetails: false,
+    window.Cal!.ns!['dineauto-onboarding']('inline', {
+      elementOrSelector: '#my-cal-inline-dineauto-onboarding',
+      calLink: 'abdellah-ouderhem/dineauto-onboarding',
+      config: {
         layout: 'month_view',
-      })
+        theme: 'dark',
+        useSlotsViewOnSmallScreen: 'true',
+      },
+    })
 
-      if (mounted) setCalLoaded(true)
-    }
+    window.Cal!.ns!['dineauto-onboarding']('ui', {
+      theme: 'dark',
+      hideEventTypeDetails: false,
+      layout: 'month_view',
+    })
 
-    // If the script was already appended by a previous render, just init
-    const existing = document.getElementById('cal-embed-script')
-    if (existing) {
-      // Script may already be loaded (window.Cal exists) or still loading
-      if (window.Cal) {
-        initCal()
-      } else {
-        existing.addEventListener('load', initCal)
-      }
-      return () => {
-        mounted = false
-        existing.removeEventListener('load', initCal)
-      }
-    }
-
-    const script = document.createElement('script')
-    script.id = 'cal-embed-script'
-    script.src = 'https://app.cal.com/embed/embed.js'
-    script.async = true
-    script.onload = initCal
-    document.head.appendChild(script)
-
-    return () => {
-      mounted = false
-      // Leave the script tag in place — removing it would break
-      // the embed if the user navigates back to this page.
-    }
+    // Show the container right away — the iframe renders inside it
+    // as soon as embed.js processes the queue (~200–500 ms).
+    setCalLoaded(true)
   }, [])
 
   return (
