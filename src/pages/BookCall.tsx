@@ -70,47 +70,68 @@ export default function BookCall() {
   const [calLoaded, setCalLoaded] = useState(false)
 
   useEffect(() => {
-    // Load Cal.com embed script
-    if (document.getElementById('cal-embed-script')) {
-      initCal()
-      return
+    let mounted = true
+
+    function initCal() {
+      const Cal = window.Cal
+      if (!Cal) return
+
+      // Init the namespace
+      Cal('init', 'dineauto-onboarding', { origin: 'https://app.cal.com' })
+
+      // Cal.ns is populated by Cal('init', ...) above — guard for TS
+      const ns = Cal.ns?.['dineauto-onboarding']
+      if (!ns) return
+
+      // Inline embed — must use the namespace variant, not Cal() directly
+      ns('inline', {
+        elementOrSelector: '#my-cal-inline-dineauto-onboarding',
+        calLink: 'abdellah-ouderhem/dineauto-onboarding',
+        config: {
+          layout: 'month_view',
+          theme: 'dark',
+          useSlotsViewOnSmallScreen: 'true',
+        },
+      })
+
+      // UI config
+      ns('ui', {
+        theme: 'dark',
+        hideEventTypeDetails: false,
+        layout: 'month_view',
+      })
+
+      if (mounted) setCalLoaded(true)
+    }
+
+    // If the script was already appended by a previous render, just init
+    const existing = document.getElementById('cal-embed-script')
+    if (existing) {
+      // Script may already be loaded (window.Cal exists) or still loading
+      if (window.Cal) {
+        initCal()
+      } else {
+        existing.addEventListener('load', initCal)
+      }
+      return () => {
+        mounted = false
+        existing.removeEventListener('load', initCal)
+      }
     }
 
     const script = document.createElement('script')
     script.id = 'cal-embed-script'
     script.src = 'https://app.cal.com/embed/embed.js'
     script.async = true
-    script.onload = () => {
-      initCal()
-      setCalLoaded(true)
-    }
+    script.onload = initCal
     document.head.appendChild(script)
 
     return () => {
-      // cleanup not needed — script persists for the session
+      mounted = false
+      // Leave the script tag in place — removing it would break
+      // the embed if the user navigates back to this page.
     }
   }, [])
-
-  function initCal() {
-    const cal = window.Cal
-    if (!cal) return
-
-    cal('init', 'dineauto-onboarding', { origin: 'https://app.cal.com' })
-
-    cal('inline', {
-      elementOrSelector: '#cal-embed-container',
-      calLink: 'abdellah-ouderhem/dineauto-onboarding',
-      layout: 'month_view',
-      theme: 'dark',
-    })
-
-    cal('ui', {
-      theme: 'dark',
-      styles: { branding: { brandColor: '#00FF85' } },
-      hideEventTypeDetails: false,
-      layout: 'month_view',
-    })
-  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -187,22 +208,20 @@ export default function BookCall() {
             <span className="text-white/70 text-sm font-medium">Book Your 30-Minute Onboarding Call</span>
           </div>
 
-          {/* Cal embed container */}
-          <div
-            id="cal-embed-container"
-            className="min-h-[600px] w-full"
-            style={{
-              background: 'rgba(0,0,0,0.2)',
-            }}
-          >
+          {/* Cal embed container — ID must match elementOrSelector in initCal */}
+          <div style={{ position: 'relative', minHeight: 600 }}>
             {!calLoaded && (
-              <div className="flex items-center justify-center h-[600px]">
+              <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-10 h-10 rounded-full border-2 border-[#00FF85]/30 border-t-[#00FF85] animate-spin" />
                   <p className="text-white/30 text-sm">Loading calendar...</p>
                 </div>
               </div>
             )}
+            <div
+              id="my-cal-inline-dineauto-onboarding"
+              style={{ width: '100%', height: '100%', minHeight: 600, overflow: 'scroll' }}
+            />
           </div>
         </div>
       </div>
